@@ -11,7 +11,13 @@
 
     step_names: [home]  # Names of the steps
 
-    home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # Initial position
+    # Home pose for custom_inverted_omy_l100 (shortened links, ceiling-mounted)
+    # -- explicit target angles (2026-08-05): joint1=0, joint2=90, joint3=90,
+    # joint4=0, joint5=-90, joint6=0 deg, gripper=-6.33 deg. Shared across
+    # units 1/2/3, which are all custom_inverted. This is a designated target,
+    # not a live sensor reading -- driven to via joint_trajectory_executor
+    # (init_position:=true) and confirmed on arrival.
+    home: [0.0, 1.5707963267948966, 1.5707963267948966, 0.0, -1.5707963267948966, 0.0, -0.11047934165124106]  # Initial position
 
     duration: 10.0
     epsilon: 0.01
