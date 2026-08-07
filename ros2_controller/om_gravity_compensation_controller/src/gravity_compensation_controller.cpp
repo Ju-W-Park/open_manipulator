@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <gravity_compensation_controller/gravity_compensation_controller.hpp>
+#include <algorithm>
 #include <chrono>
 #include <string>
 #include <stdexcept>
@@ -103,6 +104,29 @@ controller_interface::return_type GravityCompensationController::update(
   if (params_.enable_spring_effect) {
     if (q(2) < 0.5) {
       torques(2) += std::abs(q(2) - 0.5) * 2.5;
+    }
+  }
+
+  // Optional: pull the whole arm toward home_position with a virtual
+  // spring+damper, layered on top of gravity compensation. Lets a bringup
+  // reach a known pose without ever leaving effort/current command mode --
+  // switching to a position-command mode would require a Dynamixel
+  // Operating Mode change, which the firmware only allows with Torque
+  // Enable off (a real torque gap, unavoidable in software). Each joint
+  // latches off independently once within home_pull_tolerance, so normal
+  // hand-guided operation afterward feels like plain gravity compensation.
+  if (params_.enable_home_pull) {
+    for (size_t i = 0; i < n_joints_; ++i) {
+      if (home_pull_reached_[i]) {
+        continue;
+      }
+      double error = params_.home_position[i] - q(i);
+      if (std::abs(error) < params_.home_pull_tolerance[i]) {
+        home_pull_reached_[i] = true;
+        continue;
+      }
+      torques(i) += params_.home_pull_stiffness[i] * error -
+        params_.home_pull_damping[i] * q_dot(i);
     }
   }
   // Add leader sync function
@@ -216,6 +240,7 @@ controller_interface::CallbackReturn GravityCompensationController::on_configure
   previous_velocities_.resize(n_joints_);  // Initialize previous velocities vector
   joint_name_to_index_.resize(joint_names_.size(), -1);
   tmp_positions_.resize(joint_names_.size(), 0.0);
+  home_pull_reached_.resize(n_joints_, false);
 
   if (!params_.follower_joint_state_topic.empty()) {
     follower_joint_state_sub_ = get_node()->create_subscription<sensor_msgs::msg::JointState>(
@@ -312,6 +337,10 @@ controller_interface::CallbackReturn GravityCompensationController::on_activate(
 
   // get parameters from the listener in case they were updated
   params_ = param_listener_->get_params();
+  // Re-arm the home_pull latch on every activation, so restarting/reactivating
+  // this controller pulls toward home_position again from wherever the arm
+  // currently is.
+  std::fill(home_pull_reached_.begin(), home_pull_reached_.end(), false);
   // order all joints in the storage
   for (const auto & interface : params_.command_interfaces) {
     auto it =

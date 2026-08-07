@@ -126,6 +126,16 @@ def generate_launch_description():
         'gravity_controller_manager.yaml',
     ])
 
+    # custom_inverted-only: pull to home_position on activation via the
+    # gravity_compensation_controller's home_pull spring (see that yaml's
+    # header comment) -- NOT loaded by custom_omy_l100_gravity.launch.py.
+    home_pull_config = PathJoinSubstitution([
+        FindPackageShare('open_manipulator_bringup'),
+        'config',
+        'omy_l100_follower_ai',
+        'custom_inverted_home_pull.yaml',
+    ])
+
     rviz_config_file = PathJoinSubstitution([
         FindPackageShare('open_manipulator_description'),
         'rviz',
@@ -136,7 +146,7 @@ def generate_launch_description():
         package='controller_manager',
         executable='ros2_control_node',
         namespace=robot_ns,
-        parameters=[{'robot_description': urdf_file}, controller_manager_config],
+        parameters=[{'robot_description': urdf_file}, controller_manager_config, home_pull_config],
         output='both',
         condition=UnlessCondition(use_sim),
     )

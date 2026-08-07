@@ -63,4 +63,4 @@
       state_interfaces:
         - position
         - velocity
-      trigger_spring_stiffness: [0.1]
+      trigger_spring_stiffness: [1.0]

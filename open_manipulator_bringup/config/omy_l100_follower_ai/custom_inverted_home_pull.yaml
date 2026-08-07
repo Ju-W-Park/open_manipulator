@@ -1,0 +1,29 @@
+# custom_inverted_omy_l100_gravity.launch.py-only override on top of
+# gravity_controller_manager.yaml (which custom_omy_l100_gravity.launch.py
+# also shares) -- enables the home_pull spring so this variant's bringup
+# settles at the designated home pose (see initial_positions.yaml) without
+# ever leaving effort/current command mode. NOT applied to the non-inverted
+# custom_omy_l100_gravity.launch.py.
+#
+# Gains below are a first, deliberately gentle guess (not yet tuned live) --
+# raise stiffness if the pull is too slow to reach home, raise damping if it
+# oscillates/overshoots on the way there.
+/**:
+  gravity_compensation_controller:
+    ros__parameters:
+      # Disabled 2026-08-07 for bridge/leader-follower testing: home_pull's
+      # continuous tiny corrective torque (even after reaching tolerance,
+      # any subsequent hand-guided drift re-triggers it) was jittering the
+      # leader enough to flicker dsr04's joint-limit gate open/closed
+      # repeatedly, which by itself produced a velocity alarm with zero
+      # deliberate leader movement. Re-enable for standalone OMY-L100
+      # bringup convenience once bridge testing is done.
+      enable_home_pull: false
+      # joint1, joint2, joint3, joint4, joint5, joint6 (rad) -- matches
+      # omy_l100_follower_ai/initial_positions.yaml's "home" step.
+      home_position: [0.0, 1.5707963267948966, 1.5707963267948966, 0.0, -1.5707963267948966, 0.0]
+      # joint1-3 kept at the 1/8-scaled value; joint4-6 reverted to the
+      # very first test's values (2026-08-06).
+      home_pull_stiffness: [0.1875, 0.3125, 0.3125, 1.0, 1.5, 0.5]
+      home_pull_damping: [0.1125, 0.1875, 0.1875, 0.6, 0.9, 0.3]
+      home_pull_tolerance: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
