@@ -84,3 +84,38 @@ gravity_compensation_controller:
     default_value: false,
     description: "Enable additional spring effect on joint 2"
   }
+  enable_home_pull: {
+    type: bool,
+    default_value: false,
+    description: "Pull all joints toward home_position with a virtual spring, on top of gravity compensation -- lets a bringup start at a known pose without switching to a position-command control mode (which would require a torque-off Dynamixel operating-mode change). The pull latches off (per-joint) once within home_pull_tolerance and re-arms on the next on_activate, so normal hand-guided operation is unaffected after the initial move."
+  }
+  home_position: {
+    type: double_array,
+    default_value: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    description: "Target joint positions (rad) for the home_pull spring, one per joint in 'joints' order"
+  }
+  home_pull_stiffness: {
+    type: double_array,
+    default_value: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    description: "Per-joint spring stiffness (Nm/rad) pulling toward home_position when enable_home_pull is true"
+  }
+  home_pull_damping: {
+    type: double_array,
+    default_value: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    description: "Per-joint damping (Nm*s/rad) opposing joint_velocities_ while the home_pull spring is active, to avoid overshoot/oscillation"
+  }
+  home_pull_tolerance: {
+    type: double_array,
+    default_value: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02],
+    description: "Per-joint |position - home_position| (rad) below which that joint's home_pull spring latches off for the rest of this activation"
+  }
+  follower_joint_state_topic: {
+    type: string,
+    default_value: "/joint_states",
+    description: "Topic to subscribe to for a follower robot's joint states (leader-follower gravity-comp sync). Defaults to the historical hardcoded absolute topic for backward compatibility. Set to empty string to disable the subscription entirely — required for standalone multi-unit setups with no leader/follower relationship, since the absolute default otherwise silently cross-talks between independently-namespaced units."
+  }
+  collision_flag_topic: {
+    type: string,
+    default_value: "/collision_flag",
+    description: "Topic to subscribe to for the external collision flag gating leader-follower sync. Set to empty string to disable, or to a namespace-relative topic (no leading '/') to scope it to this unit."
+  }

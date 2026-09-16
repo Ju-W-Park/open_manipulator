@@ -19,7 +19,7 @@
     # (init_position:=true) and confirmed on arrival.
     home: [0.0, 1.5707963267948966, 1.5707963267948966, 0.0, -1.5707963267948966, 0.0, -0.11047934165124106]  # Initial position
 
-    duration: 10.0
+    duration: 20.0
     epsilon: 0.01
     action_topic: '/arm_controller/follow_joint_trajectory'
     joint_states_topic: '/joint_states'

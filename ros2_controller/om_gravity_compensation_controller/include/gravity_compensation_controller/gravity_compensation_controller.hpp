@@ -143,6 +143,11 @@ protected:
   std::vector<int> joint_name_to_index_;
   realtime_tools::RealtimeBuffer<std::vector<double>> follower_joint_positions_buffer_;
   std::atomic<bool> has_follower_data_{false};
+
+  // Per-joint latch for enable_home_pull -- true once that joint has come
+  // within home_pull_tolerance of home_position; reset in on_activate() so
+  // each fresh bringup pulls home again.
+  std::vector<bool> home_pull_reached_;
 };
 }  // namespace gravity_compensation_controller
 

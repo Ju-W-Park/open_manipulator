@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <gravity_compensation_controller/gravity_compensation_controller.hpp>
+#include <algorithm>
 #include <chrono>
 #include <string>
 #include <stdexcept>
@@ -103,6 +104,29 @@ controller_interface::return_type GravityCompensationController::update(
   if (params_.enable_spring_effect) {
     if (q(2) < 0.5) {
       torques(2) += std::abs(q(2) - 0.5) * 2.5;
+    }
+  }
+
+  // Optional: pull the whole arm toward home_position with a virtual
+  // spring+damper, layered on top of gravity compensation. Lets a bringup
+  // reach a known pose without ever leaving effort/current command mode --
+  // switching to a position-command mode would require a Dynamixel
+  // Operating Mode change, which the firmware only allows with Torque
+  // Enable off (a real torque gap, unavoidable in software). Each joint
+  // latches off independently once within home_pull_tolerance, so normal
+  // hand-guided operation afterward feels like plain gravity compensation.
+  if (params_.enable_home_pull) {
+    for (size_t i = 0; i < n_joints_; ++i) {
+      if (home_pull_reached_[i]) {
+        continue;
+      }
+      double error = params_.home_position[i] - q(i);
+      if (std::abs(error) < params_.home_pull_tolerance[i]) {
+        home_pull_reached_[i] = true;
+        continue;
+      }
+      torques(i) += params_.home_pull_stiffness[i] * error -
+        params_.home_pull_damping[i] * q_dot(i);
     }
   }
   // Add leader sync function
@@ -216,47 +240,52 @@ controller_interface::CallbackReturn GravityCompensationController::on_configure
   previous_velocities_.resize(n_joints_);  // Initialize previous velocities vector
   joint_name_to_index_.resize(joint_names_.size(), -1);
   tmp_positions_.resize(joint_names_.size(), 0.0);
+  home_pull_reached_.resize(n_joints_, false);
 
-  follower_joint_state_sub_ = get_node()->create_subscription<sensor_msgs::msg::JointState>(
-    "/joint_states", rclcpp::QoS(10),
-    [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
-      if (msg->name.size() != msg->position.size()) {
-        RCLCPP_WARN(
-          get_node()->get_logger(),
-          "JointState message has mismatched name/position sizes");
-        return;
-      }
-
-      if (!joint_index_initialized_) {
-        for (size_t i = 0; i < joint_names_.size(); ++i) {
-          auto it = std::find(msg->name.begin(), msg->name.end(), joint_names_[i]);
-          if (it != msg->name.end()) {
-            joint_name_to_index_[i] = static_cast<int>(std::distance(msg->name.begin(), it));
-          } else {
-            RCLCPP_ERROR(
-              get_node()->get_logger(),
-              "Joint name '%s' not found in the first joint state message",
-              joint_names_[i].c_str());
-            return;
-          }
+  if (!params_.follower_joint_state_topic.empty()) {
+    follower_joint_state_sub_ = get_node()->create_subscription<sensor_msgs::msg::JointState>(
+      params_.follower_joint_state_topic, rclcpp::QoS(10),
+      [this](const sensor_msgs::msg::JointState::SharedPtr msg) {
+        if (msg->name.size() != msg->position.size()) {
+          RCLCPP_WARN(
+            get_node()->get_logger(),
+            "JointState message has mismatched name/position sizes");
+          return;
         }
-        joint_index_initialized_ = true;
-        RCLCPP_INFO(get_node()->get_logger(), "Joint index mapping initialized.");
-      }
 
-      for (size_t i = 0; i < joint_names_.size(); ++i) {
-        tmp_positions_[i] = msg->position[joint_name_to_index_[i]];
-      }
+        if (!joint_index_initialized_) {
+          for (size_t i = 0; i < joint_names_.size(); ++i) {
+            auto it = std::find(msg->name.begin(), msg->name.end(), joint_names_[i]);
+            if (it != msg->name.end()) {
+              joint_name_to_index_[i] = static_cast<int>(std::distance(msg->name.begin(), it));
+            } else {
+              RCLCPP_ERROR(
+                get_node()->get_logger(),
+                "Joint name '%s' not found in the first joint state message",
+                joint_names_[i].c_str());
+              return;
+            }
+          }
+          joint_index_initialized_ = true;
+          RCLCPP_INFO(get_node()->get_logger(), "Joint index mapping initialized.");
+        }
 
-      follower_joint_positions_buffer_.writeFromNonRT(tmp_positions_);
-      has_follower_data_ = true;
-    });
+        for (size_t i = 0; i < joint_names_.size(); ++i) {
+          tmp_positions_[i] = msg->position[joint_name_to_index_[i]];
+        }
 
-  collision_flag_sub_ = get_node()->create_subscription<std_msgs::msg::Bool>(
-    "/collision_flag", rclcpp::QoS(10),
-    [this](const std_msgs::msg::Bool::SharedPtr msg) {
-      collision_flag_buffer_.writeFromNonRT(msg->data);
-    });
+        follower_joint_positions_buffer_.writeFromNonRT(tmp_positions_);
+        has_follower_data_ = true;
+      });
+  }
+
+  if (!params_.collision_flag_topic.empty()) {
+    collision_flag_sub_ = get_node()->create_subscription<std_msgs::msg::Bool>(
+      params_.collision_flag_topic, rclcpp::QoS(10),
+      [this](const std_msgs::msg::Bool::SharedPtr msg) {
+        collision_flag_buffer_.writeFromNonRT(msg->data);
+      });
+  }
 
   if (params_.joints.empty()) {
     // TODO(destogl): is this correct? Can we really move-on if no joint names are not provided?
@@ -308,6 +337,10 @@ controller_interface::CallbackReturn GravityCompensationController::on_activate(
 
   // get parameters from the listener in case they were updated
   params_ = param_listener_->get_params();
+  // Re-arm the home_pull latch on every activation, so restarting/reactivating
+  // this controller pulls toward home_position again from wherever the arm
+  // currently is.
+  std::fill(home_pull_reached_.begin(), home_pull_reached_.end(), false);
   // order all joints in the storage
   for (const auto & interface : params_.command_interfaces) {
     auto it =
